@@ -70,7 +70,7 @@ class GCNTTIImpl final : public BasicTTIImplBase<GCNTTIImpl> {
   friend BaseT;
 
   const GCNSubtarget *ST;
-  const AMDGPUTargetLowering *TLI;
+  const SITargetLowering *TLI;
   AMDGPUTTIImpl CommonTTI;
   bool IsGraphicsShader;
 
@@ -178,6 +178,9 @@ public:
     ArrayRef<const Value *> Args = ArrayRef<const Value *>());
 
   unsigned getCFInstrCost(unsigned Opcode);
+
+  bool isInlineAsmSourceOfDivergence(const CallInst *CI,
+                                     ArrayRef<unsigned> Indices = {}) const;
 
   int getVectorInstrCost(unsigned Opcode, Type *ValTy, unsigned Index);
   bool isSourceOfDivergence(const Value *V) const;
