@@ -119,6 +119,10 @@ ModulePass *createStripNonLineTableDebugInfoPass();
 // number of conditional branches in the hot paths based on profiles.
 //
 FunctionPass *createControlHeightReductionLegacyPass();
+
+FunctionPass *createUnifyLoopExitsPass();
+FunctionPass *createEliminateIrreducibilityPass();
+
 }
 
 #endif

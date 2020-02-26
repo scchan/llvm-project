@@ -25,6 +25,7 @@ add_llvm_library(LLVMTransformUtils
   ImportedFunctionsInliningStatistics.cpp
   InstructionNamer.cpp
   IntegerDivision.cpp
+  IrreducibilityElimination.cpp
   LCSSA.cpp
   LibCallsShrinkWrap.cpp
   Local.cpp
@@ -58,6 +59,7 @@ add_llvm_library(LLVMTransformUtils
   StripNonLineTableDebugInfo.cpp
   SymbolRewriter.cpp
   UnifyFunctionExitNodes.cpp
+  UnifyLoopExits.cpp
   Utils.cpp
   ValueMapper.cpp
   VNCoercion.cpp
