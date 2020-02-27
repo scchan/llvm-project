@@ -69,6 +69,11 @@ static cl::opt<unsigned> UnrollThresholdIf(
   cl::desc("Unroll threshold increment for AMDGPU for each if statement inside loop"),
   cl::init(150), cl::Hidden);
 
+static cl::opt<bool> UnrollRuntimeLocal(
+  "amdgpu-unroll-runtime-local",
+  cl::desc("Allow runtime unroll for AMDGPU if local memory used in a loop"),
+  cl::init(true), cl::Hidden);
+
 static bool dependsOnLocalPhi(const Loop *L, const Value *Cond,
                               unsigned Depth = 0) {
   const Instruction *I = dyn_cast<Instruction>(Cond);
@@ -171,6 +176,9 @@ void AMDGPUTTIImpl::getUnrollingPreferences(Loop *L, ScalarEvolution &SE,
             (!isa<GlobalVariable>(GEP->getPointerOperand()) &&
              !isa<Argument>(GEP->getPointerOperand())))
           continue;
+        LLVM_DEBUG(dbgs() << "Allow unroll runtime for loop:\n"
+                          << *L << " due to LDS use.\n");
+        UP.Runtime = UnrollRuntimeLocal;
       }
 
       // Check if GEP depends on a value defined by this loop itself.
