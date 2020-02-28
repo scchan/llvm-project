@@ -436,11 +436,7 @@ void CodeGenModule::Release() {
   }
   EmitCtorList(GlobalCtors, "llvm.global_ctors");
   EmitCtorList(GlobalDtors, "llvm.global_dtors");
-  // skip global annotation for HCC kernel path
-  if (Context.getLangOpts().CPlusPlusAMP && getCodeGenOpts().AMPIsDevice) {
-  } else {
-    EmitGlobalAnnotations();
-  }
+  EmitGlobalAnnotations();
   EmitStaticExternCAliases();
   EmitDeferredUnusedCoverageMappings();
   if (CoverageMapping)
@@ -2940,7 +2936,7 @@ void CodeGenModule::EmitGlobalDefinition(GlobalDecl GD, llvm::GlobalValue *GV) {
     }
   }
 
-  PrettyStackTraceDecl CrashInfo(const_cast<ValueDecl *>(D), D->getLocation(), 
+  PrettyStackTraceDecl CrashInfo(const_cast<ValueDecl *>(D), D->getLocation(),
                                  Context.getSourceManager(),
                                  "Generating code for declaration");
 
@@ -3892,15 +3888,23 @@ LangAS CodeGenModule::GetGlobalVarAddressSpace(const VarDecl *D) {
       return LangAS::cuda_device;
   }
 
-  if (LangOpts.CPlusPlusAMP && LangOpts.DevicePath &&
-      D && D->hasAttr<HCCTileStaticAttr>())
-    return LangAS::hcc_tilestatic;
+  if (LangOpts.CPlusPlusAMP && LangOpts.DevicePath) {
+    if (D && D->hasAttr<HCCTileStaticAttr>())
+      return LangAS::hcc_tilestatic;
+    if (D && D->hasAttr<AnnotateAttr>() &&
+        D->getAttr<AnnotateAttr>()->getAnnotation() == "__HIP_constant__")
+      return LangAS::opencl_constant;
+    if (D && D->getType().isConstQualified())
+      return LangAS::opencl_constant;
+    return LangAS::hcc_global;
+  }
 
   if (LangOpts.OpenMP) {
     LangAS AS;
     if (OpenMPRuntime->hasAllocateAttributeForGlobalVar(D, AS))
       return AS;
   }
+
   return getTargetCodeGenInfo().getGlobalVarAddressSpace(*this, D);
 }
 
@@ -4180,6 +4184,17 @@ void CodeGenModule::EmitGlobalVarDefinition(const VarDecl *D,
         // a feature, but we've got to do the same for compatibility.
         Linkage = llvm::GlobalValue::InternalLinkage;
     }
+  }
+
+  if (GV && LangOpts.CPlusPlusAMP) {
+    // This mimics the CUDA-specific processing done above.
+    bool IsHIPConstant = D->hasAttr<AnnotateAttr>() &&
+      D->getAttr<AnnotateAttr>()->getAnnotation() == "__HIP_constant__";
+
+    if (LangOpts.DevicePath)
+      if (Linkage != llvm::GlobalValue::InternalLinkage &&
+          (D->hasAttr<CXXAMPRestrictAMPAttr>() || IsHIPConstant))
+        GV->setExternallyInitialized(true);
   }
 
   if (!IsHIPPinnedShadowVar)

@@ -442,9 +442,13 @@ CodeGenModule::EmitCXXGlobalVarDeclInitFunc(const VarDecl *D,
        D->hasAttr<CUDASharedAttr>()))
     return;
 
-  if ( (getLangOpts().CPlusPlusAMP && getLangOpts().DevicePath &&
-        D->hasAttr<HCCTileStaticAttr>()) ||
-       (getLangOpts().OpenMP && getOpenMPRuntime().emitDeclareTargetVarDefinition(D, Addr, PerformInit)))
+  if (getLangOpts().CPlusPlusAMP && getLangOpts().DevicePath)
+    if (D->hasAttr<HCCTileStaticAttr>() ||
+        (D->hasAttr<AnnotateAttr>() &&
+         D->getAttr<AnnotateAttr>()->getAnnotation() == "__HIP_constant__"))
+      return;
+  if (getLangOpts().OpenMP &&
+      getOpenMPRuntime().emitDeclareTargetVarDefinition(D, Addr, PerformInit))
     return;
 
   // Check if we've already initialized this decl.

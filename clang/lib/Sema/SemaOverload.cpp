@@ -12779,8 +12779,7 @@ static void maybeCastArgsForHIPGlobalFunction(Sema &S,
     if (FormalT == ActualT) return Actual;
     if (FormalT->isReferenceType()) return Actual;
 
-    CastKind CK;
-    if (FormalT->isPointerType()) CK = CK_NoOp;
+    CastKind CK = CK_NoOp;
     if (FormalT->isIntegerType()) {
       if (ActualT->isIntegerType()) CK = CK_IntegralCast;
       if (ActualT->isFloatingType()) CK = CK_FloatingToIntegral;

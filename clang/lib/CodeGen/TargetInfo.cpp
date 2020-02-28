@@ -7965,12 +7965,26 @@ static bool requiresAMDGPUProtectedVisibility(const Decl *D,
                                               llvm::GlobalValue *GV) {
   if (GV->getVisibility() != llvm::GlobalValue::HiddenVisibility)
     return false;
+  if (D->hasAttr<OpenCLKernelAttr>())
+    return true;
+  if (isa<FunctionDecl>(D)) {
+    if (D->hasAttr<CUDAGlobalAttr>())
+      return true;
+    if (D->hasAttr<AnnotateAttr>() &&
+        D->getAttr<AnnotateAttr>()->getAnnotation() == "__HIP_global_function__")
+      return true;
+  }
+  if (isa<VarDecl>(D)) {
+    if (D->hasAttr<CUDADeviceAttr>() || D->hasAttr<CUDAConstantAttr>())
+      return true;
+    if (D->hasAttr<HIPPinnedShadowAttr>())
+      return true;
+    if (D->hasAttr<AnnotateAttr>() &&
+        D->getAttr<AnnotateAttr>()->getAnnotation() == "__HIP_constant__")
+      return true;
+  }
 
-  return D->hasAttr<OpenCLKernelAttr>() ||
-         (isa<FunctionDecl>(D) && D->hasAttr<CUDAGlobalAttr>()) ||
-         (isa<VarDecl>(D) &&
-          (D->hasAttr<CUDADeviceAttr>() || D->hasAttr<CUDAConstantAttr>() ||
-           D->hasAttr<HIPPinnedShadowAttr>()));
+  return false;
 }
 
 static bool requiresAMDGPUDefaultVisibility(const Decl *D,
