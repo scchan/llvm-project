@@ -32,6 +32,7 @@ class PromoteConstant : public ModulePass {
   // TODO: this should be hoisted to a common header with HC utility functions
   //       once the related work on PromotePointerKernArgsToGlobal gets merged
   void createPromotableCast(IRBuilder<>& Builder, Value *From, Value *To) {
+    To->dump();
     From->replaceAllUsesWith(To);
 
     Value *FToG = Builder.CreateAddrSpaceCast(
@@ -51,47 +52,102 @@ class PromoteConstant : public ModulePass {
 
     Builder.SetInsertPoint(UI->getNextNonDebugInstruction());
 
-    Value *Tmp = Builder.CreateBitCast(UndefValue::get(UI->getType()),
-                                       UI->getType());
+    // We cannot use IRBuilder since it might do the obvious folding, which
+    // would yield an undef value of a possibly primitive type, which cannot be
+    // disambiguated from other undefs of the same primitive type and would
+    // cause havoc when replaced with the promotable cast created later.
+    Value *UD = UndefValue::get(Builder.getInt8Ty());
+    Value *Tmp = CastInst::CreateBitOrPointerCast(UD, UI->getType(), "Tmp",
+                                                  &*Builder.GetInsertPoint());
+
     createPromotableCast(Builder, UI, Tmp);
 
     return true;
+  }
+  // TODO: Whilst ConstantExpr and Operator handling could obviously be folded
+  //       into a single function, we leave them separate for now to allow
+  //       possible additional development.
+  bool maybeHandleInstruction(IRBuilder<>& Builder, Instruction *I) {
+    if (!I)
+      return false;
+
+    if (!I->getType()->isPointerTy())
+      return false;
+    if (I->getType()->getPointerAddressSpace() != FlatAddrSpace)
+      return false;
+
+    if (auto LI = dyn_cast<LoadInst>(I))
+      return maybePromoteUse(Builder, LI);
+    if (auto PHI = dyn_cast<PHINode>(I)) {
+      return false;
+    }
+    if (auto SEL = dyn_cast<SelectInst>(I))
+      return false;
+
+    return false;
+  }
+
+  bool maybeHandleOperator(IRBuilder<>& Builder, Operator *Op) {
+    if (!Op)
+      return false;
+    if (!Op->getType()->isPointerTy())
+      return false;
+
+    bool Modified = false;
+    for (auto &&U : Op->users()) {
+      if (maybeHandleConstantExpr(Builder, dyn_cast<ConstantExpr>(U)))
+        Modified = true;
+      else if (maybeHandleOperator(Builder, dyn_cast<Operator>(U)))
+        Modified = true;
+      else if (maybeHandleInstruction(Builder, dyn_cast<Instruction>(U)))
+        Modified = true;
+    }
+
+    return Modified;
+  }
+
+  bool maybeHandleConstantExpr(IRBuilder<>& Builder, ConstantExpr *CE) {
+    if (!CE)
+      return false;
+    if (!CE->getType()->isPointerTy())
+      return false;
+
+    bool Modified = false;
+    for (auto &&U : CE->users()) {
+      if (maybeHandleConstantExpr(Builder, dyn_cast<ConstantExpr>(U)))
+        Modified = true;
+      else if (maybeHandleInstruction(Builder, dyn_cast<Instruction>(U)))
+        Modified = true;
+      else if (maybeHandleOperator(Builder, dyn_cast<Operator>(U)))
+        Modified = true;
+    }
+
+    return Modified;
   }
 public:
   static char ID;
   PromoteConstant() : ModulePass{ID} {}
 
   bool runOnModule(Module &M) override {
+    SmallVector<GlobalVariable *, 8u> PromotableGlobals;
+    for (auto &&GV : M.globals())
+      if (GV.getAddressSpace() == ConstantAddrSpace)
+        PromotableGlobals.push_back(&GV);
+
+    if (PromotableGlobals.empty())
+      return false;
+
+    IRBuilder<> Builder(M.getContext());
+
     bool Modified = false;
-
-    for (auto &&F : M.functions()) {
-      for (auto &&BB : F) {
-        for (auto &&I : BB) {
-          if (isa<BitCastInst>(I))
-            continue;
-          if (isa<AddrSpaceCastInst>(I))
-            continue;
-          if (isa<CallInst>(I))
-            continue;
-          if (!I.getType()->isPointerTy())
-            continue;
-          if (I.getType()->getPointerAddressSpace() != FlatAddrSpace)
-            continue;
-
-          if (auto GEPOp = dyn_cast<GEPOperator>(&I))
-            if (GEPOp->getPointerAddressSpace() != ConstantAddrSpace)
-              continue; // TODO: not handled.
-          if (auto GEP = dyn_cast<GetElementPtrInst>(&I))
-            if (GEP->getPointerAddressSpace() != ConstantAddrSpace)
-              continue;
-          if (auto LI = dyn_cast<LoadInst>(&I))
-            if (LI->getPointerAddressSpace() != ConstantAddrSpace)
-              continue;
-
-          IRBuilder<> Builder(I.getContext());
-          if (maybePromoteUse(Builder, &I))
-            Modified = true;
-        }
+    for (auto &&GV : PromotableGlobals) {
+      for (auto &&U : GV->users()) {
+        if (maybeHandleConstantExpr(Builder, dyn_cast<ConstantExpr>(U)))
+          Modified = true;
+        else if (maybeHandleInstruction(Builder, dyn_cast<Instruction>(U)))
+          Modified = true;
+        else if (maybeHandleOperator(Builder, dyn_cast<Operator>(U)))
+          Modified = true;
       }
     }
 
@@ -102,10 +158,8 @@ char PromoteConstant::ID = 0;
 
 static RegisterPass<PromoteConstant> X{
   "promote-constant",
-  "Promotes uses of variables annotated with __constant__ to refer to the "
-  "global address space iff the use yields a flat pointer since, by "
-  "definition a pointer which is placed in __constant__ storage can only point "
-  "to the global address space.",
+  "Promotes users of variables annotated with __constant__ to refer to the "
+  "global address space iff the user produces a flat pointer.",
   false,
   false};
 }

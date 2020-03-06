@@ -436,7 +436,8 @@ void CodeGenModule::Release() {
   }
   EmitCtorList(GlobalCtors, "llvm.global_ctors");
   EmitCtorList(GlobalDtors, "llvm.global_dtors");
-  EmitGlobalAnnotations();
+  if (!LangOpts.CPlusPlusAMP || !LangOpts.DevicePath)
+    EmitGlobalAnnotations();
   EmitStaticExternCAliases();
   EmitDeferredUnusedCoverageMappings();
   if (CoverageMapping)
