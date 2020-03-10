@@ -31,161 +31,179 @@
 using namespace llvm;
 
 static cl::opt<bool> EnableFunctionCalls(
-     "sac-enable-function-calls", cl::init(false), cl::Hidden,
-     cl::desc("Enable function calls"));
+  "sac-enable-function-calls", cl::init(false), cl::Hidden,
+  cl::desc("Enable function calls"));
 
 namespace {
 class SelectAcceleratorCode : public ModulePass {
-    SmallPtrSet<const Function*, 8u> HCCallees_;
+  SmallPtrSet<const Function *, 8u> HCCallees_;
 
-    void findAllHCCallees_(const Function &F, Module &M)
-    {
-        for (auto&& BB : F) {
-            for (auto&& I : BB) {
-                if (auto CI = dyn_cast<CallInst>(&I)) {
-                    auto V = CI->getCalledValue()->stripPointerCasts();
-                    if (auto Callee = dyn_cast<Function>(V)) {
-                        auto Tmp = HCCallees_.insert(Callee);
-                        if (Tmp.second) findAllHCCallees_(*Callee, M);
-                    }
-                }
-            }
-        }
-    }
-
-    template<typename T>
-    static
-    void erase_(T &X)
-    {
-        X.dropAllReferences();
-        X.replaceAllUsesWith(UndefValue::get(X.getType()));
-        X.eraseFromParent();
-    }
-
-    template<typename F, typename G, typename P>
-    bool eraseIf_(F First, G Last, P Predicate) const
-    {
-        bool erasedSome = false;
-
-        auto It = First();
-        while (It != Last()) {
-            It->removeDeadConstantUsers();
-            if (Predicate(*It)) {
-                erase_(*It);
-                erasedSome = true;
-                It = First();
-            }
-            else ++It;
-        }
-
-        return erasedSome;
-    }
-
-    bool eraseNonHCFunctionsBody_(Module &M) const
-    {
-        bool Modified = false;
-        for (auto&& F : M.functions()) {
-          if (HCCallees_.count(M.getFunction(F.getName())) == 0) {
-            F.deleteBody();
-            Modified = true;
+  void findAllHCCallees_(const Function &F, Module &M) {
+    for (auto &&BB : F) {
+      for (auto &&I : BB) {
+        if (auto CI = dyn_cast<CallInst>(&I)) {
+          auto V = CI->getCalledValue()->stripPointerCasts();
+          if (auto Callee = dyn_cast<Function>(V)) {
+            auto Tmp = HCCallees_.insert(Callee);
+            if (Tmp.second)
+              findAllHCCallees_(*Callee, M);
           }
-        };
-        return Modified;
-    }
-
-    bool eraseDeadGlobals_(Module &M) const
-    {
-        return eraseIf_(
-            [&]() { return M.global_begin(); },
-            [&]() { return M.global_end(); },
-            [](const Constant& K) { return !K.isConstantUsed(); });
-    }
-
-    bool eraseDeadAliases_(Module &M)
-    {
-        return eraseIf_(
-            [&]() { return M.alias_begin(); },
-            [&]() { return M.alias_end(); },
-            [](const Constant& K) { return !K.isConstantUsed(); });
-    }
-
-    static
-    bool forceAlwaysInline_(Function &F)
-    {
-        if (F.hasFnAttribute(Attribute::AlwaysInline)) {
-            // already marked as always inline,
-            // nothing needs to be changed
-            assert(!F.hasFnAttribute(Attribute::OptimizeNone));
-            assert(!F.hasFnAttribute(Attribute::NoInline));
-            return false;
         }
-
-        if (F.hasFnAttribute(Attribute::OptimizeNone)) {
-            // don't inline functions with optnone
-            // Function with optnone is required to have
-            // noinline
-            assert(F.hasFnAttribute(Attribute::NoInline));
-            return false;
-        }
-
-        if (F.hasFnAttribute(Attribute::NoInline)) {
-            F.removeFnAttr(Attribute::NoInline);
-        }
-        F.addFnAttr(Attribute::AlwaysInline);
-        return true;
+      }
     }
+  }
+
+  template<typename T>
+  static
+  void erase_(T &X) {
+    X.dropAllReferences();
+    X.replaceAllUsesWith(UndefValue::get(X.getType()));
+    X.eraseFromParent();
+  }
+
+  template<typename F, typename G, typename P>
+  bool eraseIf_(F First, G Last, P Predicate) const {
+    bool erasedSome = false;
+
+    auto It = First();
+    while (It != Last()) {
+      It->removeDeadConstantUsers();
+      if (Predicate(*It)) {
+        erase_(*It);
+        erasedSome = true;
+        It = First();
+      }
+      else ++It;
+    }
+
+    return erasedSome;
+  }
+
+  bool eraseNonHCFunctionsBody_(Module &M) const {
+    bool Modified = false;
+    for (auto &&F : M.functions()) {
+      if (HCCallees_.count(M.getFunction(F.getName())) == 0) {
+        F.deleteBody();
+        Modified = true;
+      }
+    }
+
+    return Modified;
+  }
+
+  bool eraseDeadGlobals_(Module &M) const {
+    return eraseIf_([&]() { return M.global_begin(); },
+                    [&]() { return M.global_end(); },
+                    [](const Constant &K) { return !K.isConstantUsed(); });
+  }
+
+  bool eraseDeadAliases_(Module &M) {
+    return eraseIf_([&]() { return M.alias_begin(); },
+                    [&]() { return M.alias_end(); },
+                    [](const Constant &K) { return !K.isConstantUsed(); });
+  }
+
+  static bool forceAlwaysInline_(Function &F) {
+    if (F.hasFnAttribute(Attribute::AlwaysInline)) {
+      // already marked as always inline,
+      // nothing needs to be changed
+      assert(!F.hasFnAttribute(Attribute::OptimizeNone));
+      assert(!F.hasFnAttribute(Attribute::NoInline));
+
+      return false;
+    }
+
+    if (F.hasFnAttribute(Attribute::OptimizeNone)) {
+      // don't inline functions with optnone
+      // Function with optnone is required to have
+      // noinline
+      assert(F.hasFnAttribute(Attribute::NoInline));
+
+      return false;
+    }
+
+    if (F.hasFnAttribute(Attribute::NoInline))
+      F.removeFnAttr(Attribute::NoInline);
+
+    F.addFnAttr(Attribute::AlwaysInline);
+
+    return true;
+  }
+
+  static bool setFunctionAttributes(Function &F) {
+    if (F.getCallingConv() == CallingConv::AMDGPU_KERNEL)
+      return false;
+    if (!EnableFunctionCalls)
+      return forceAlwaysInline_(F);
+
+    bool Modified = false;
+    if (!F.hasFnAttribute(Attribute::NoRecurse)) {
+      F.addFnAttr(Attribute::NoRecurse);
+      Modified = true;
+    }
+    if (F.getVisibility() != Function::VisibilityTypes::HiddenVisibility) {
+      F.setVisibility(Function::VisibilityTypes::HiddenVisibility);
+      Modified = true;
+    }
+
+    return Modified;
+  }
 public:
-    static char ID;
-    SelectAcceleratorCode() : ModulePass{ID} {}
+  static char ID;
+  SelectAcceleratorCode() : ModulePass(ID) {}
 
-    bool doInitialization(Module &M) override { return false; }
+  bool doInitialization(Module &M) override { return false; }
 
-    bool runOnModule(Module &M) override {
-        // This may be a candidate for an analysis pass that is
-        // invalidated appropriately by other passes.
-        for (auto&& F : M.functions()) {
-            if (F.getCallingConv() == CallingConv::AMDGPU_KERNEL) {
-                auto Tmp = HCCallees_.insert(M.getFunction(F.getName()));
-                if (Tmp.second) findAllHCCallees_(F, M);
-            }
-        }
-
-        bool Modified = eraseNonHCFunctionsBody_(M);
-
-        Modified = eraseDeadGlobals_(M) || Modified;
-
-        M.dropTriviallyDeadConstantArrays();
-
-        Modified = eraseDeadAliases_(M) || Modified;
-
-        if (!EnableFunctionCalls)
-            for (auto&& F : M.functions()) Modified = forceAlwaysInline_(F) || Modified;
-
-        return Modified;
+  bool runOnModule(Module &M) override {
+    // This may be a candidate for an analysis pass that is
+    // invalidated appropriately by other passes.
+    for (auto &&F : M.functions()) {
+      if (F.getCallingConv() == CallingConv::AMDGPU_KERNEL) {
+        auto Tmp = HCCallees_.insert(M.getFunction(F.getName()));
+        if (Tmp.second) findAllHCCallees_(F, M);
+      }
     }
 
-    bool doFinalization(Module& M) override
-    {
-        if(EnableFunctionCalls) return false;
+    bool Modified = eraseNonHCFunctionsBody_(M);
 
+    Modified = eraseDeadGlobals_(M) || Modified;
+
+    M.dropTriviallyDeadConstantArrays();
+
+    Modified = eraseDeadAliases_(M) || Modified;
+
+    for (auto &&F : M.functions())
+      Modified = setFunctionAttributes(F);
+
+    return Modified;
+  }
+
+  bool doFinalization(Module& M) override {
+    if (EnableFunctionCalls) return false;
+
+<<<<<<< HEAD
         const auto It = std::find_if(M.begin(), M.end(), [](Function& F) {
             return !isInlineViable(F) && !F.isIntrinsic();
         });
+=======
+    const auto It = std::find_if(M.begin(), M.end(), [](Function& F) {
+      return !isInlineViable(F).isSuccess() && !F.isIntrinsic();
+    });
+>>>>>>> efef5be78801... Function calls like `norecurse` and hidden
 
-        if (It != M.end()) {
-            M.getContext().diagnose(DiagnosticInfoUnsupported{
-                *It, "The function cannot be inlined."});
-        }
+    if (It != M.end())
+      M.getContext().diagnose(
+        DiagnosticInfoUnsupported(*It, "The function cannot be inlined."));
 
-        return false;
-    }
+    return false;
+  }
 };
 char SelectAcceleratorCode::ID = 0;
 
-static RegisterPass<SelectAcceleratorCode> X{
-    "select-accelerator-code",
-    "Selects only the code that is expected to run on an accelerator, "
-    "ensuring that it can be lowered by AMDGPU.",
-    false,
-    false};
+static RegisterPass<SelectAcceleratorCode> X(
+  "select-accelerator-code",
+  "Selects only the code that is expected to run on an accelerator, "
+  "ensuring that it can be lowered by AMDGPU.",
+  false,
+  false);
 }
