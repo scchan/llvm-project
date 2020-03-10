@@ -32,7 +32,6 @@ class PromoteConstant : public ModulePass {
   // TODO: this should be hoisted to a common header with HC utility functions
   //       once the related work on PromotePointerKernArgsToGlobal gets merged
   void createPromotableCast(IRBuilder<>& Builder, Value *From, Value *To) {
-    To->dump();
     From->replaceAllUsesWith(To);
 
     Value *FToG = Builder.CreateAddrSpaceCast(
