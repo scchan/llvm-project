@@ -131,6 +131,8 @@ class SelectAcceleratorCode : public ModulePass {
   }
 
   static bool setFunctionAttributes(Function &F) {
+    if (F.isIntrinsic())
+      return false;
     if (F.getCallingConv() == CallingConv::AMDGPU_KERNEL)
       return false;
     if (!EnableFunctionCalls)
@@ -141,8 +143,13 @@ class SelectAcceleratorCode : public ModulePass {
       F.addFnAttr(Attribute::NoRecurse);
       Modified = true;
     }
-    if (F.getVisibility() != Function::VisibilityTypes::HiddenVisibility) {
-      F.setVisibility(Function::VisibilityTypes::HiddenVisibility);
+    if (!F.isDSOLocal()) {
+      F.setDSOLocal(true);
+      Modified = true;
+    }
+    if (!F.isDeclaration() && !F.hasInternalLinkage()) {
+      F.setVisibility(Function::VisibilityTypes::DefaultVisibility);
+      F.setLinkage(Function::LinkageTypes::InternalLinkage);
       Modified = true;
     }
 
@@ -173,7 +180,7 @@ public:
     Modified = eraseDeadAliases_(M) || Modified;
 
     for (auto &&F : M.functions())
-      Modified = setFunctionAttributes(F);
+      Modified = setFunctionAttributes(F) || Modified;
 
     return Modified;
   }

@@ -54,11 +54,18 @@ class PromotePointerKernArgsToGlobal : public FunctionPass {
                                             &*Builder.GetInsertPoint());
   }
 
-  void maybePromoteUse(IRBuilder<>& Builder, Instruction *UI) {
+  void maybePromoteUser(IRBuilder<>& Builder, Instruction *UI) {
     if (!UI)
       return;
 
-    Builder.SetInsertPoint(UI->getNextNonDebugInstruction());
+    Instruction *NI = UI->getNextNonDebugInstruction();
+    while (NI && isa<PHINode>(NI))
+      NI = NI->getNextNonDebugInstruction();
+
+    if (!NI)
+      return;
+
+    Builder.SetInsertPoint(NI);
 
     createPromotableCast(Builder, UI, createTemporary(Builder, UI->getType()));
   }
@@ -77,7 +84,7 @@ public:
       return false;
 
     SmallVector<Argument *, 8> PromotableArgs;
-    SmallVector<User *, 8> PromotableUses;
+    SmallVector<User *, 8> PromotableUsers;
     for (auto &&Arg : F.args()) {
       for (auto &&U : Arg.users()) {
         if (!U->getType()->isPointerTy())
@@ -85,7 +92,7 @@ public:
         if (U->getType()->getPointerAddressSpace() != FlatAddrSpace)
           continue;
 
-        PromotableUses.push_back(U);
+        PromotableUsers.push_back(U);
       }
 
       if (!Arg.getType()->isPointerTy())
@@ -96,12 +103,12 @@ public:
       PromotableArgs.push_back(&Arg);
     }
 
-    if (PromotableArgs.empty() && PromotableUses.empty())
+    if (PromotableArgs.empty() && PromotableUsers.empty())
       return false;
 
     IRBuilder<> Builder(F.getContext());
-    for (auto &&PU : PromotableUses)
-      maybePromoteUse(Builder, dyn_cast<Instruction>(PU));
+    for (auto &&PU : PromotableUsers)
+      maybePromoteUser(Builder, dyn_cast<Instruction>(PU));
 
     Builder.SetInsertPoint(&F.getEntryBlock().front());
     for (auto &&Arg : PromotableArgs)
