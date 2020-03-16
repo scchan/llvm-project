@@ -188,15 +188,9 @@ public:
   bool doFinalization(Module& M) override {
     if (EnableFunctionCalls) return false;
 
-<<<<<<< HEAD
-        const auto It = std::find_if(M.begin(), M.end(), [](Function& F) {
-            return !isInlineViable(F) && !F.isIntrinsic();
-        });
-=======
     const auto It = std::find_if(M.begin(), M.end(), [](Function& F) {
-      return !isInlineViable(F).isSuccess() && !F.isIntrinsic();
+      return !isInlineViable(F) && !F.isIntrinsic();
     });
->>>>>>> efef5be78801... Function calls like `norecurse` and hidden
 
     if (It != M.end())
       M.getContext().diagnose(
