@@ -179,6 +179,12 @@ static bool lowerExecSyncGlobalVariables(
 }
 
 static bool runLowerExecSyncGlobals(Module &M) {
+  // When object linking is enabled, named barrier ID assignment is deferred
+  // to the linker to avoid cross-TU barrier ID collisions. The linker has
+  // whole-program visibility and assigns globally unique IDs.
+  if (AMDGPUTargetMachine::EnableObjectLinking)
+    return false;
+
   CallGraph CG = CallGraph(M);
   bool Changed = false;
   Changed |= eliminateConstantExprUsesOfLDSFromAllInstructions(M);

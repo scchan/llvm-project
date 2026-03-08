@@ -251,7 +251,7 @@ void MCResourceInfo::assignResourceInfoExpr(
 void MCResourceInfo::gatherResourceInfo(
     const MachineFunction &MF,
     const AMDGPUResourceUsageAnalysisWrapperPass::FunctionResourceInfo &FRI,
-    MCContext &OutContext) {
+    MCContext &OutContext, bool LocalOnly) {
   // Worst case VGPR use for non-hardware-entrypoints.
   MCSymbol *MaxVGPRSym = getMaxVGPRSymbol(OutContext);
   MCSymbol *MaxAGPRSym = getMaxAGPRSymbol(OutContext);
@@ -271,6 +271,31 @@ void MCResourceInfo::gatherResourceInfo(
 
   LLVM_DEBUG(dbgs() << "MCResUse: Gathering resource information for "
                     << FnSym->getName() << '\n');
+
+  auto SetToLocal = [&](int64_t LocalValue, ResourceInfoKind RIK) {
+    MCSymbol *Sym = getSymbol(FnSym->getName(), RIK, OutContext, IsLocal);
+    Sym->setVariableValue(MCConstantExpr::create(LocalValue, OutContext));
+  };
+
+  // In LocalOnly mode (link-time object linking), set all resource symbols to
+  // concrete local values. The linker handles cross-TU propagation, and
+  // symbolic expressions referencing external callees would be unresolvable
+  // during --save-temps assembly round-trips.
+  if (LocalOnly) {
+    SetToLocal(FRI.NumVGPR, RIK_NumVGPR);
+    SetToLocal(FRI.NumAGPR, RIK_NumAGPR);
+    SetToLocal(FRI.NumExplicitSGPR, RIK_NumSGPR);
+    SetToLocal(FRI.NumNamedBarrier, RIK_NumNamedBarrier);
+    SetToLocal(FRI.PrivateSegmentSize, RIK_PrivateSegSize);
+    SetToLocal(FRI.UsesVCC, ResourceInfoKind::RIK_UsesVCC);
+    SetToLocal(FRI.UsesFlatScratch, ResourceInfoKind::RIK_UsesFlatScratch);
+    SetToLocal(FRI.HasDynamicallySizedStack,
+               ResourceInfoKind::RIK_HasDynSizedStack);
+    SetToLocal(FRI.HasRecursion, ResourceInfoKind::RIK_HasRecursion);
+    SetToLocal(FRI.HasIndirectCall, ResourceInfoKind::RIK_HasIndirectCall);
+    return;
+  }
+
   LLVM_DEBUG({
     if (!FRI.Callees.empty()) {
       dbgs() << "MCResUse: Callees:\n";
@@ -355,7 +380,7 @@ void MCResourceInfo::gatherResourceInfo(
     Sym->setVariableValue(localConstExpr);
   }
 
-  auto SetToLocal = [&](int64_t LocalValue, ResourceInfoKind RIK) {
+  auto SetToLocalIndirect = [&](int64_t LocalValue, ResourceInfoKind RIK) {
     MCSymbol *Sym = getSymbol(FnSym->getName(), RIK, OutContext, IsLocal);
     LLVM_DEBUG(
         dbgs() << "MCResUse:   " << Sym->getName() << ": Adding " << LocalValue
@@ -378,12 +403,14 @@ void MCResourceInfo::gatherResourceInfo(
                            ResourceInfoKind::RIK_HasIndirectCall,
                            AMDGPUMCExpr::AGVK_Or, MF, FRI.Callees, OutContext);
   } else {
-    SetToLocal(FRI.UsesVCC, ResourceInfoKind::RIK_UsesVCC);
-    SetToLocal(FRI.UsesFlatScratch, ResourceInfoKind::RIK_UsesFlatScratch);
-    SetToLocal(FRI.HasDynamicallySizedStack,
-               ResourceInfoKind::RIK_HasDynSizedStack);
-    SetToLocal(FRI.HasRecursion, ResourceInfoKind::RIK_HasRecursion);
-    SetToLocal(FRI.HasIndirectCall, ResourceInfoKind::RIK_HasIndirectCall);
+    SetToLocalIndirect(FRI.UsesVCC, ResourceInfoKind::RIK_UsesVCC);
+    SetToLocalIndirect(FRI.UsesFlatScratch,
+                       ResourceInfoKind::RIK_UsesFlatScratch);
+    SetToLocalIndirect(FRI.HasDynamicallySizedStack,
+                       ResourceInfoKind::RIK_HasDynSizedStack);
+    SetToLocalIndirect(FRI.HasRecursion, ResourceInfoKind::RIK_HasRecursion);
+    SetToLocalIndirect(FRI.HasIndirectCall,
+                       ResourceInfoKind::RIK_HasIndirectCall);
   }
 }
 

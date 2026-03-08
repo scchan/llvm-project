@@ -57,19 +57,20 @@ void AMDGCN::Linker::constructLldCommand(Compilation &C, const JobAction &JA,
                                          const llvm::opt::ArgList &Args) const {
   // Construct lld command.
   // The output from ld.lld is an HSA code object file.
-  ArgStringList LldArgs{"-flavor",
-                        "gnu",
-                        "-m",
-                        "elf64_amdgpu",
-                        "--no-undefined",
-                        "-shared",
-                        "-plugin-opt=-amdgpu-internalize-symbols"};
-  if (Args.hasArg(options::OPT_hipstdpar))
-    LldArgs.push_back("-plugin-opt=-amdgpu-enable-hipstdpar");
-
   auto &TC = getToolChain();
   auto &D = TC.getDriver();
   bool IsThinLTO = D.getOffloadLTOMode() == LTOK_Thin;
+
+  ArgStringList LldArgs{"-flavor",        "gnu",    "-m", "elf64_amdgpu",
+                        "--no-undefined", "-shared"};
+
+  // With ThinLTO + object linking, internalization is unsafe because any
+  // function may be called from another TU.
+  if (!IsThinLTO)
+    LldArgs.push_back("-plugin-opt=-amdgpu-internalize-symbols");
+  if (Args.hasArg(options::OPT_hipstdpar))
+    LldArgs.push_back("-plugin-opt=-amdgpu-enable-hipstdpar");
+
   addLTOOptions(TC, Args, LldArgs, Output, Inputs, IsThinLTO);
 
   // Extract all the -m options
@@ -86,15 +87,10 @@ void AMDGCN::Linker::constructLldCommand(Compilation &C, const JobAction &JA,
   if (!Features.empty())
     LldArgs.push_back(Args.MakeArgString(MAttrString));
 
-  // ToDo: Remove this option after AMDGPU backend supports ISA-level linking.
-  // Since AMDGPU backend currently does not support ISA-level linking, all
-  // called functions need to be imported.
-  if (IsThinLTO) {
-    LldArgs.push_back(Args.MakeArgString("-plugin-opt=-force-import-all"));
-    LldArgs.push_back(Args.MakeArgString("-plugin-opt=-avail-extern-to-local"));
-    LldArgs.push_back(Args.MakeArgString(
-        "-plugin-opt=-avail-extern-gv-in-addrspace-to-local=3"));
-  }
+  // ThinLTO for AMDGPU implies object linking; enable it automatically.
+  if (IsThinLTO)
+    LldArgs.push_back(
+        Args.MakeArgString("-plugin-opt=-amdgpu-enable-object-linking"));
 
   for (const Arg *A : Args.filtered(options::OPT_mllvm)) {
     LldArgs.push_back(
@@ -250,6 +246,10 @@ void HIPAMDToolChain::addClangTargetOptions(
       CC1Args.append({"-mllvm", "-amdgpu-enable-hipstdpar"});
   }
 
+  if (DriverArgs.hasFlag(options::OPT_foffload_object_linking,
+                         options::OPT_fno_offload_object_linking, false))
+    CC1Args.append({"-mllvm", "-amdgpu-enable-object-linking"});
+
   StringRef MaxThreadsPerBlock =
       DriverArgs.getLastArgValue(options::OPT_gpu_max_threads_per_block_EQ);
   if (!MaxThreadsPerBlock.empty()) {
@@ -311,7 +311,12 @@ HIPAMDToolChain::TranslateArgs(const llvm::opt::DerivedArgList &Args,
     checkTargetID(*DAL);
   }
 
-  if (!Args.hasArg(options::OPT_flto_partitions_EQ))
+  // LTO partitioning is incompatible with object linking (each TU must produce
+  // a separate object for the linker). ThinLTO implies object linking.
+  if (!Args.hasArg(options::OPT_flto_partitions_EQ) &&
+      !Args.hasFlag(options::OPT_foffload_object_linking,
+                    options::OPT_fno_offload_object_linking, false) &&
+      getDriver().getOffloadLTOMode() != LTOK_Thin)
     DAL->AddJoinedArg(nullptr, Opts.getOption(options::OPT_flto_partitions_EQ),
                       "8");
 

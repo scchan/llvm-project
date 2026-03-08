@@ -8115,6 +8115,15 @@ bool SITargetLowering::shouldUseLDSConstAddress(const GlobalValue *GV) const {
   if (!GV->hasExternalLinkage())
     return true;
 
+  // External LDS declarations with non-zero size are produced by link-time LDS
+  // lowering and need relocations — the linker assigns their offsets.
+  // Zero-sized external LDS (dynamic shared memory) is handled separately.
+  if (const auto *GVar = dyn_cast<GlobalVariable>(GV))
+    if (GVar->isDeclaration() &&
+        GVar->getAddressSpace() == AMDGPUAS::LOCAL_ADDRESS &&
+        GVar->getGlobalSize(GVar->getDataLayout()) > 0)
+      return false;
+
   const auto OS = getTargetMachine().getTargetTriple().getOS();
   return OS == Triple::AMDHSA || OS == Triple::AMDPAL;
 }

@@ -14,6 +14,7 @@
 
 #include "AMDGPUHSAMetadataStreamer.h"
 #include "AMDGPU.h"
+#include "AMDGPUTargetMachine.h"
 #include "GCNSubtarget.h"
 #include "MCTargetDesc/AMDGPUTargetStreamer.h"
 #include "SIMachineFunctionInfo.h"
@@ -498,14 +499,23 @@ MetadataStreamerMsgPackV4::getHSAKernelProps(const MachineFunction &MF,
   Align MaxKernArgAlign;
   Kern[".kernarg_segment_size"] = Kern.getDocument()->getNode(
       STM.getKernArgSegmentSize(F, MaxKernArgAlign));
+  bool LinkTimeMode = F.hasFnAttribute("amdgpu-link-time-lds");
   Kern[".group_segment_fixed_size"] =
-      Kern.getDocument()->getNode(ProgramInfo.LDSSize);
-  DelayedExprs->assignDocNode(Kern[".private_segment_fixed_size"],
-                              msgpack::Type::UInt, ProgramInfo.ScratchSize);
+      Kern.getDocument()->getNode(LinkTimeMode ? 0u : ProgramInfo.LDSSize);
+  if (LinkTimeMode) {
+    Kern[".private_segment_fixed_size"] = Kern.getDocument()->getNode(0u);
+  } else {
+    DelayedExprs->assignDocNode(Kern[".private_segment_fixed_size"],
+                                msgpack::Type::UInt, ProgramInfo.ScratchSize);
+  }
   if (CodeObjectVersion >= AMDGPU::AMDHSA_COV5) {
-    DelayedExprs->assignDocNode(Kern[".uses_dynamic_stack"],
-                                msgpack::Type::Boolean,
-                                ProgramInfo.DynamicCallStack);
+    if (LinkTimeMode) {
+      Kern[".uses_dynamic_stack"] = Kern.getDocument()->getNode(false);
+    } else {
+      DelayedExprs->assignDocNode(Kern[".uses_dynamic_stack"],
+                                  msgpack::Type::Boolean,
+                                  ProgramInfo.DynamicCallStack);
+    }
   }
 
   if (CodeObjectVersion >= AMDGPU::AMDHSA_COV5 && STM.supportsWGP())
@@ -515,17 +525,25 @@ MetadataStreamerMsgPackV4::getHSAKernelProps(const MachineFunction &MF,
   // FIXME: The metadata treats the minimum as 16?
   Kern[".kernarg_segment_align"] =
       Kern.getDocument()->getNode(std::max(Align(4), MaxKernArgAlign).value());
-  Kern[".wavefront_size"] =
-      Kern.getDocument()->getNode(STM.getWavefrontSize());
-  DelayedExprs->assignDocNode(Kern[".sgpr_count"], msgpack::Type::UInt,
-                              ProgramInfo.NumSGPR);
-  DelayedExprs->assignDocNode(Kern[".vgpr_count"], msgpack::Type::UInt,
-                              ProgramInfo.NumVGPR);
+  Kern[".wavefront_size"] = Kern.getDocument()->getNode(STM.getWavefrontSize());
+  if (LinkTimeMode) {
+    Kern[".sgpr_count"] = Kern.getDocument()->getNode(0u);
+    Kern[".vgpr_count"] = Kern.getDocument()->getNode(0u);
+  } else {
+    DelayedExprs->assignDocNode(Kern[".sgpr_count"], msgpack::Type::UInt,
+                                ProgramInfo.NumSGPR);
+    DelayedExprs->assignDocNode(Kern[".vgpr_count"], msgpack::Type::UInt,
+                                ProgramInfo.NumVGPR);
+  }
 
   // Only add AGPR count to metadata for supported devices
   if (STM.hasMAIInsts()) {
-    DelayedExprs->assignDocNode(Kern[".agpr_count"], msgpack::Type::UInt,
-                                ProgramInfo.NumAccVGPR);
+    if (LinkTimeMode) {
+      Kern[".agpr_count"] = Kern.getDocument()->getNode(0u);
+    } else {
+      DelayedExprs->assignDocNode(Kern[".agpr_count"], msgpack::Type::UInt,
+                                  ProgramInfo.NumAccVGPR);
+    }
   }
 
   Kern[".max_flat_workgroup_size"] =

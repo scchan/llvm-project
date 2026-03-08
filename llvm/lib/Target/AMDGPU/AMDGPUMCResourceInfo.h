@@ -105,7 +105,7 @@ public:
   void gatherResourceInfo(
       const MachineFunction &MF,
       const AMDGPUResourceUsageAnalysisWrapperPass::FunctionResourceInfo &FRI,
-      MCContext &OutContext);
+      MCContext &OutContext, bool LocalOnly = false);
 
   const MCExpr *createTotalNumVGPRs(const MachineFunction &MF, MCContext &Ctx);
   const MCExpr *createTotalNumSGPRs(const MachineFunction &MF, bool hasXnack,

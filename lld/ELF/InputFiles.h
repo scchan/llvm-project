@@ -271,6 +271,12 @@ public:
   // SHT_LLVM_CALL_GRAPH_PROFILE section index.
   uint32_t cgProfileSectionIndex = 0;
 
+  // .amdgpu.callgraph section index for link-time LDS resolution.
+  uint32_t amdgpuCallGraphSectionIndex = 0;
+
+  // .amdgpu.resource_usage section index for link-time resource propagation.
+  uint32_t amdgpuResourceUsageSectionIndex = 0;
+
   // MIPS GP0 value defined by this file. This value represents the gp value
   // used to create the relocatable object and required to support
   // R_MIPS_GPREL16 / R_MIPS_GPREL32 relocations.

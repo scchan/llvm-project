@@ -26,6 +26,7 @@
 #include "llvm/MC/MCELFStreamer.h"
 #include "llvm/MC/MCSubtargetInfo.h"
 #include "llvm/Support/AMDGPUMetadata.h"
+#include "llvm/Support/AMDGPUResourceUsage.h"
 #include "llvm/Support/AMDHSAKernelDescriptor.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/FormattedStream.h"
@@ -51,7 +52,7 @@ bool AMDGPUTargetStreamer::EmitHSAMetadataV3(StringRef HSAMetadataString) {
   return EmitHSAMetadata(HSAMetadataDoc, false);
 }
 
-StringRef AMDGPUTargetStreamer::getArchNameFromElfMach(unsigned ElfMach) {
+StringRef AMDGPU::getArchNameFromElfMach(unsigned ElfMach) {
   AMDGPU::GPUKind AK;
 
   // clang-format off
@@ -139,7 +140,11 @@ StringRef AMDGPUTargetStreamer::getArchNameFromElfMach(unsigned ElfMach) {
   return getArchNameR600(AK);
 }
 
-unsigned AMDGPUTargetStreamer::getElfMach(StringRef GPU) {
+StringRef AMDGPUTargetStreamer::getArchNameFromElfMach(unsigned ElfMach) {
+  return AMDGPU::getArchNameFromElfMach(ElfMach);
+}
+
+unsigned AMDGPU::getElfMach(StringRef GPU) {
   AMDGPU::GPUKind AK = parseArchAMDGCN(GPU);
   if (AK == AMDGPU::GPUKind::GK_NONE)
     AK = parseArchR600(GPU);
@@ -223,6 +228,10 @@ unsigned AMDGPUTargetStreamer::getElfMach(StringRef GPU) {
   // clang-format on
 
   llvm_unreachable("unknown GPU");
+}
+
+unsigned AMDGPUTargetStreamer::getElfMach(StringRef GPU) {
+  return AMDGPU::getElfMach(GPU);
 }
 
 //===----------------------------------------------------------------------===//

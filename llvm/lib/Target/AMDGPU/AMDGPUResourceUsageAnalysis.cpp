@@ -17,6 +17,7 @@
 
 #include "AMDGPUResourceUsageAnalysis.h"
 #include "AMDGPU.h"
+#include "AMDGPUTargetMachine.h"
 #include "GCNSubtarget.h"
 #include "SIMachineFunctionInfo.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
@@ -273,8 +274,16 @@ AMDGPUResourceUsageAnalysisImpl::analyzeResourceUsage(
 
         bool IsIndirect = !Callee || Callee->isDeclaration();
 
+        // In object linking mode, calls to external declarations are not
+        // treated conservatively -- the linker has the complete call graph
+        // and will propagate actual resource usage across TUs. We only
+        // apply conservative assumptions for truly unknown calls (no callee
+        // operand at all, i.e., indirect calls via function pointers).
+        bool IsExternalDirect = AMDGPUTargetMachine::EnableObjectLinking &&
+                                Callee && Callee->isDeclaration();
+
         // FIXME: Call site could have norecurse on it
-        if (!Callee || !Callee->doesNotRecurse()) {
+        if (!IsExternalDirect && (!Callee || !Callee->doesNotRecurse())) {
           Info.HasRecursion = true;
 
           // TODO: If we happen to know there is no stack usage in the
@@ -292,7 +301,7 @@ AMDGPUResourceUsageAnalysisImpl::analyzeResourceUsage(
           }
         }
 
-        if (IsIndirect) {
+        if (IsIndirect && !IsExternalDirect) {
           Info.CalleeSegmentSize =
               std::max(Info.CalleeSegmentSize,
                        static_cast<uint64_t>(AssumedStackSizeForExternalCall));

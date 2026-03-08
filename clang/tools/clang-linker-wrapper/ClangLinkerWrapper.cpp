@@ -541,9 +541,19 @@ Expected<StringRef> clang(ArrayRef<StringRef> InputFiles, const ArgList &Args,
     Triple.isAMDGPU() ? CmdArgs.push_back(Args.MakeArgString("-mcpu=" + Arch))
                       : CmdArgs.push_back(Args.MakeArgString("-march=" + Arch));
 
-  // AMDGPU is always in LTO mode currently.
-  if (Triple.isAMDGPU())
-    CmdArgs.push_back("-flto");
+  // For AMDGPU, enable LTO if any input is bitcode (normal RDC flow).
+  // When inputs are ELF objects (via -foffload-object-linking), skip LTO
+  // so lld links the objects directly with device-side LDS resolution.
+  if (Triple.isAMDGPU()) {
+    bool AnyBitcode = llvm::any_of(InputFiles, [](StringRef F) {
+      file_magic Magic;
+      if (identify_magic(F, Magic))
+        return false;
+      return Magic == file_magic::bitcode;
+    });
+    if (AnyBitcode)
+      CmdArgs.push_back("-flto");
+  }
 
   // Forward all of the `--offload-opt` and `-mllvm` options to the device.
   for (auto &Arg : Args.filtered(OPT_offload_opt_eq_minus, OPT_mllvm))

@@ -38,6 +38,10 @@ void AMDGPUOpenMPToolChain::addClangTargetOptions(
   assert(DeviceOffloadingKind == Action::OFK_OpenMP &&
          "Only OpenMP offloading kinds are supported.");
 
+  if (DriverArgs.hasFlag(options::OPT_foffload_object_linking,
+                         options::OPT_fno_offload_object_linking, false))
+    CC1Args.append({"-mllvm", "-amdgpu-enable-object-linking"});
+
   if (!DriverArgs.hasFlag(options::OPT_offloadlib, options::OPT_no_offloadlib,
                           true))
     return;

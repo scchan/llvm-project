@@ -203,6 +203,15 @@ const MCExpr *SIProgramInfo::getPGMRSrc2(CallingConv::ID CC,
   return MCConstantExpr::create(0, Ctx);
 }
 
+uint64_t
+SIProgramInfo::getComputePGMRSrc1ConstantBits(const GCNSubtarget &ST) const {
+  return getComputePGMRSrc1Reg(*this, ST);
+}
+
+uint64_t SIProgramInfo::getComputePGMRSrc2ConstantBits() const {
+  return getComputePGMRSrc2Reg(*this);
+}
+
 uint64_t SIProgramInfo::getFunctionCodeSize(const MachineFunction &MF,
                                             bool IsLowerBound) {
   if (!IsLowerBound && CodeSizeInBytes.has_value())

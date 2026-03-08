@@ -3373,6 +3373,12 @@ def foffload_lto : Flag<["-"], "foffload-lto">,
 def fno_offload_lto : Flag<["-"], "fno-offload-lto">,
   Visibility<[ClangOption, CLOption]>, Group<f_Group>,
   HelpText<"Disable LTO mode (default) for offload compilation">;
+def foffload_object_linking : Flag<["-"], "foffload-object-linking">,
+  Visibility<[ClangOption]>, Group<f_Group>,
+  HelpText<"Enable object linking for offload compilation (AMDGPU)">;
+def fno_offload_object_linking : Flag<["-"], "fno-offload-object-linking">,
+  Visibility<[ClangOption]>, Group<f_Group>,
+  HelpText<"Disable object linking for offload compilation (default)">;
 def flto_jobs_EQ : Joined<["-"], "flto-jobs=">,
   Visibility<[ClangOption, CC1Option]>, Group<f_Group>,
   HelpText<"Controls the backend parallelism of -flto=thin (default "

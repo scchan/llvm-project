@@ -300,6 +300,11 @@ public:
   LLVM_PREFERRED_TYPE(bool)
   uint8_t dsoProtected : 1;
 
+  // True if this is an AMDGPU LDS symbol (SHN_AMDGPU_LDS). These are handled
+  // by the AMDGPU link-time LDS resolution pass, not replaceCommonSymbols().
+  LLVM_PREFERRED_TYPE(bool)
+  uint8_t isAMDGPULDS : 1;
+
   // Temporary flags used to communicate which symbol entries need PLT and GOT
   // entries during postScanRelocations();
   std::atomic<uint16_t> flags;

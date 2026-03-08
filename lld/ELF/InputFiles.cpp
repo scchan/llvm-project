@@ -788,6 +788,13 @@ void ObjFile<ELFT>::initializeSections(bool ignoreComdats,
     if ((sec.sh_flags & SHF_EXCLUDE) && !ctx.arg.relocatable) {
       if (type == SHT_LLVM_CALL_GRAPH_PROFILE)
         cgProfileSectionIndex = i;
+      if (type == SHT_PROGBITS) {
+        StringRef name = CHECK2(obj.getSectionName(sec, shstrtab), this);
+        if (name == ".amdgpu.callgraph")
+          amdgpuCallGraphSectionIndex = i;
+        else if (name == ".amdgpu.resource_usage")
+          amdgpuResourceUsageSectionIndex = i;
+      }
       if (type == SHT_LLVM_ADDRSIG) {
         // We ignore the address-significance table if we know that the object
         // file was created by objcopy or ld -r. This is because these tools
@@ -1229,6 +1236,19 @@ void ObjFile<ELFT>::initializeSymbols(const object::ELFFile<ELFT> &obj) {
       hasCommonSyms = true;
       sym->resolve(ctx, CommonSymbol{ctx, this, StringRef(), binding, stOther,
                                      type, value, size});
+      continue;
+    }
+
+    // SHN_AMDGPU_LDS symbols encode alignment in st_value and size in st_size,
+    // like SHN_COMMON. They are resolved by the AMDGPU link-time LDS pass.
+    if (LLVM_UNLIKELY(eSym.st_shndx == ELF::SHN_AMDGPU_LDS)) {
+      if (value == 0 || value >= UINT32_MAX)
+        Err(ctx) << this << ": AMDGPU LDS symbol '" << sym->getName()
+                 << "' has invalid alignment: " << value;
+      hasCommonSyms = true;
+      sym->resolve(ctx, CommonSymbol{ctx, this, StringRef(), binding, stOther,
+                                     type, value, size});
+      sym->isAMDGPULDS = true;
       continue;
     }
 

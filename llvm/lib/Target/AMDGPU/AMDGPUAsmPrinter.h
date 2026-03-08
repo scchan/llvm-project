@@ -15,7 +15,9 @@
 #define LLVM_LIB_TARGET_AMDGPU_AMDGPUASMPRINTER_H
 
 #include "AMDGPUMCResourceInfo.h"
+#include "AMDGPUResourceUsageAnalysis.h"
 #include "SIProgramInfo.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/CodeGen/AsmPrinter.h"
 
 namespace llvm {
@@ -84,7 +86,30 @@ private:
   getAmdhsaKernelDescriptor(const MachineFunction &MF,
                             const SIProgramInfo &PI) const;
 
+  /// In link-time mode, emit the kernel descriptor as raw bytes instead of
+  /// going through the .amdhsa_kernel directive mechanism.
+  void emitRawKernelDescriptor(const MachineFunction &MF);
+
   void initTargetStreamer(Module &M);
+
+  void emitCallGraphSection(Module &M);
+  void collectCallEdge(const MachineInstr &MI);
+  void emitResourceUsageSection();
+
+  SetVector<std::pair<MCSymbol *, MCSymbol *>> DirectCallEdges;
+
+  struct PerFunctionResourceInfo {
+    const Function *F;
+    AMDGPUResourceUsageAnalysisImpl::SIFunctionResourceInfo RI;
+    uint32_t OccupancyLDSLimit = 0;
+  };
+  SmallVector<PerFunctionResourceInfo> FunctionResourceInfos;
+
+  unsigned CachedVGPREncodingGranule = 0;
+  unsigned CachedSGPREncodingGranule = 0;
+  bool CachedHasAccumOffset = false;
+  bool CachedSGPRBlocksAlwaysZero = false;
+  bool CachedHasNamedBarCnt = false;
 
   SmallString<128> getMCExprStr(const MCExpr *Value);
 

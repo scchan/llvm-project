@@ -1056,7 +1056,10 @@ void Driver::CreateOffloadingDeviceToolChains(Compilation &C,
                       return types::isHIP(I.first);
                     }) ||
        C.getInputArgs().hasArg(options::OPT_hip_link) ||
-       C.getInputArgs().hasArg(options::OPT_hipstdpar)) &&
+       C.getInputArgs().hasArg(options::OPT_hipstdpar) ||
+       C.getInputArgs().hasFlag(options::OPT_foffload_object_linking,
+                                options::OPT_fno_offload_object_linking,
+                                false)) &&
       !UseLLVMOffload;
   bool IsSYCL = C.getInputArgs().hasFlag(options::OPT_fsycl,
                                          options::OPT_fno_sycl, false);
@@ -5253,11 +5256,15 @@ Action *Driver::ConstructPhaseAction(
     // Skip a redundant Backend phase for HIP device code when using the new
     // offload driver, where mid-end is done in linker wrapper. With
     // -save-temps, we still need the Backend phase to produce optimized IR.
+    // With -foffload-object-linking, the Backend phase must run to produce
+    // real object files for direct linking by lld.
     if (TargetDeviceOffloadKind == Action::OFK_HIP &&
         Args.hasFlag(options::OPT_offload_new_driver,
                      options::OPT_no_offload_new_driver,
                      C.getActiveOffloadKinds() != Action::OFK_None) &&
-        !offloadDeviceOnly() && !isSaveTempsEnabled())
+        !offloadDeviceOnly() && !isSaveTempsEnabled() &&
+        !Args.hasFlag(options::OPT_foffload_object_linking,
+                      options::OPT_fno_offload_object_linking, false))
       return Input;
 
     if (isUsingLTO() && TargetDeviceOffloadKind == Action::OFK_None) {
@@ -5310,6 +5317,8 @@ Action *Driver::ConstructPhaseAction(
            TargetDeviceOffloadKind != Action::OFK_None) ||
           TargetDeviceOffloadKind == Action::OFK_HIP) &&
          !UseSPIRVBackendForHipDeviceOnlyNoRDC &&
+         !Args.hasFlag(options::OPT_foffload_object_linking,
+                       options::OPT_fno_offload_object_linking, false) &&
          ((Args.hasFlag(options::OPT_fgpu_rdc, options::OPT_fno_gpu_rdc,
                         false) ||
            (Args.hasFlag(options::OPT_offload_new_driver,

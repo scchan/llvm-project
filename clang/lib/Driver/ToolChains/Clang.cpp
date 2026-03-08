@@ -9450,22 +9450,18 @@ void LinkerWrapper::ConstructJob(Compilation &C, const JobAction &JA,
       else if (C.getDriver().getOffloadLTOMode() == LTOK_Thin) {
         CmdArgs.push_back(Args.MakeArgString(
             "--device-compiler=" + TC->getTripleString() + "=-flto=thin"));
+        // ThinLTO for AMDGPU implies object linking.
         if (TC->getTriple().isAMDGPU()) {
           CmdArgs.push_back(
               Args.MakeArgString("--device-linker=" + TC->getTripleString() +
-                                 "=-plugin-opt=-force-import-all"));
-          CmdArgs.push_back(
-              Args.MakeArgString("--device-linker=" + TC->getTripleString() +
-                                 "=-plugin-opt=-avail-extern-to-local"));
-          CmdArgs.push_back(Args.MakeArgString(
-              "--device-linker=" + TC->getTripleString() +
-              "=-plugin-opt=-avail-extern-gv-in-addrspace-to-local=3"));
-          if (Kind == Action::OFK_OpenMP) {
-            CmdArgs.push_back(
-                Args.MakeArgString("--device-linker=" + TC->getTripleString() +
-                                   "=-plugin-opt=-amdgpu-internalize-symbols"));
-          }
+                                 "=-plugin-opt=-amdgpu-enable-object-linking"));
         }
+      } else if (TC->getTriple().isAMDGPU() &&
+                 !Args.hasFlag(options::OPT_foffload_object_linking,
+                               options::OPT_fno_offload_object_linking,
+                               false)) {
+        CmdArgs.push_back(Args.MakeArgString(
+            "--device-compiler=" + TC->getTripleString() + "=-flto"));
       }
     }
   }
