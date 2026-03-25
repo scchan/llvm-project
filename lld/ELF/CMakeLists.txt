@@ -82,6 +82,7 @@ add_lld_library(lldELF
 
   LINK_LIBS
   lldCommon
+  LLVMAMDGPUUtils
   ${imported_libs}
   ${LLVM_PTHREAD_LIB}
 
